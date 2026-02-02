@@ -36,7 +36,9 @@ const generateExpenditures = (count: number): Expenditure[] =>
       paymentOrder: Math.random() > 0.5 ? `${1000 + Math.floor(Math.random() * 9000)}` : `PO-${1000 + Math.floor(Math.random() * 9000)}`,
       category,
       subCategory: randomItem(subCategories),
-      department: randomItem(departments),
+      department: category === "OH-35 Grants for Creation of Capital Assets"
+        ? randomItem(departments.slice(1))
+        : "-",
       amount: randomAmount(50000),
       attachment: Math.random() > 0.5 ? "https://example.com/file.pdf" : undefined
     }
