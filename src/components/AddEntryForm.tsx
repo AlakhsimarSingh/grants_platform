@@ -25,7 +25,8 @@ export function AddEntryForm() {
   const [category, setCategory] = useState("")
   const [subCategory, setSubCategory] = useState("")
   const [department, setDepartment] = useState("Not Applicable")
-  const [orderNo, setOrderNo] = useState("")
+  const [sanctionOrder, setSanctionOrder] = useState("")
+  const [paymentOrder, setPaymentOrder] = useState("")
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0])
 
   const [amount, setAmount] = useState("")
@@ -50,7 +51,8 @@ export function AddEntryForm() {
       category,
       subCategory: entryType === "expenditure" ? subCategory : null,
       department: entryType === "expenditure" ? department : null,
-      orderNo,
+      sanctionOrder,
+      paymentOrder: entryType === "expenditure" ? paymentOrder : null,
       amount: Number(amount.replace(/,/g, "")),
       date,
     }
@@ -136,9 +138,16 @@ export function AddEntryForm() {
         )}
 
         <Field className="gap-1">
-          <FieldLabel className="text-xs">Sanction / Payment Order</FieldLabel>
-          <Input value={orderNo} onChange={(e) => setOrderNo(e.target.value)} required />
+          <FieldLabel className="text-xs">Sanction Order</FieldLabel>
+          <Input value={sanctionOrder} onChange={(e) => setSanctionOrder(e.target.value)} required />
         </Field>
+
+        {entryType === "expenditure" && (
+          <Field className="gap-1">
+            <FieldLabel className="text-xs">Payment Order</FieldLabel>
+            <Input value={paymentOrder} onChange={(e) => setPaymentOrder(e.target.value)} required />
+          </Field>
+        )}
 
         <Field className="gap-1">
           <FieldLabel className="text-xs">Amount (INR)</FieldLabel>

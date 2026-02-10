@@ -33,6 +33,7 @@ const generateExpenditures = (count: number): Expenditure[] =>
     const subCategories = subCategoriesMap[category]
     return {
       date: randomDate(),
+      sanctionOrder: Math.random() > 0.5 ? `${1000 + Math.floor(Math.random() * 9000)}` : `SO-${1000 + Math.floor(Math.random() * 9000)}`,
       paymentOrder: Math.random() > 0.5 ? `${1000 + Math.floor(Math.random() * 9000)}` : `PO-${1000 + Math.floor(Math.random() * 9000)}`,
       category,
       subCategory: randomItem(subCategories),
@@ -83,6 +84,7 @@ const expenditureColumns: Column<Expenditure>[] = [
       ? d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
       : String(d)
   },
+  { key: "sanctionOrder", label: "Sanction Order", sortable: true },
   { key: "paymentOrder", label: "Payment Order", sortable: true },
   { key: "category", label: "Category", sortable: true },
   { key: "subCategory", label: "Sub-category", sortable: true },
@@ -137,10 +139,10 @@ const receiptFilters: Filter<Receipt>[] = [
 ]
 
 const expenditureFilters: Filter<Expenditure>[] = [
+  { key: "sanctionOrder", type: "text", label: "Sanction Order", placeholder: "Search Sanction Order" },
   { key: "paymentOrder", type: "text", label: "Payment Order", placeholder: "Search Payment Order" },
   { key: "category", type: "select", label: "Category", options: categories },
   { key: "subCategory", type: "select", label: "Sub-category" },
-  { key: "department", type: "select", label: "Department", options: departments },
   { key: "expenditureMin", type: "number", label: "Min Expenditure", placeholder: "Min ₹", filterFn: (row, val) => row.amount >= Number(val) },
   { key: "expenditureMax", type: "number", label: "Max Expenditure", placeholder: "Max ₹", filterFn: (row, val) => row.amount <= Number(val) },
   { key: "dateFrom", type: "date", label: "From Date", filterFn: (row, val) => row.date >= new Date(val) },

@@ -12,18 +12,24 @@ export function RemoveEntryForm() {
   const navigate = useNavigate()
 
   const [entryType, setEntryType] = useState<EntryType | "">("")
-  const [orderNo, setOrderNo] = useState("")
+  const [sanctionOrder, setSanctionOrder] = useState("")
+  const [paymentOrder, setPaymentOrder] = useState("")
   const [open, setOpen] = useState(false)
 
   const handleLookup = (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!entryType || !orderNo) return
+    if (!entryType || !sanctionOrder) return
+    if (entryType === "expenditure" && !paymentOrder) return
     setOpen(true)
   }
 
   const confirmDelete = () => {
-    console.log("Deleted:", { entryType, orderNo })
+    console.log("Deleted:", {
+      entryType,
+      sanctionOrder,
+      paymentOrder: entryType === "expenditure" ? paymentOrder : null,
+    })
     setOpen(false)
     navigate("/")
   }
@@ -39,9 +45,9 @@ export function RemoveEntryForm() {
         </h1>
 
         <div className="mb-4 w-full">
-            <Button className="max-w-fit px-0 hover:bg-white" variant="ghost" onClick={() => navigate("/")}>
-                ‹ Back
-            </Button>
+          <Button className="max-w-fit px-0 hover:bg-white" variant="ghost" onClick={() => navigate("/")}>
+            ‹ Back
+          </Button>
         </div>
 
         <FieldGroup className="flex flex-col gap-4">
@@ -50,7 +56,10 @@ export function RemoveEntryForm() {
             <Select
               required
               value={entryType}
-              onValueChange={(v) => setEntryType(v as EntryType)}
+              onValueChange={(v) => {
+                setEntryType(v as EntryType)
+                setPaymentOrder("")
+              }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select type" />
@@ -63,15 +72,24 @@ export function RemoveEntryForm() {
           </Field>
 
           <Field className="gap-1">
-            <FieldLabel className="text-xs">
-              Sanction / Payment Order
-            </FieldLabel>
+            <FieldLabel className="text-xs">Sanction Order</FieldLabel>
             <Input
-              value={orderNo}
-              onChange={(e) => setOrderNo(e.target.value)}
+              value={sanctionOrder}
+              onChange={(e) => setSanctionOrder(e.target.value)}
               required
             />
           </Field>
+
+          {entryType === "expenditure" && (
+            <Field className="gap-1">
+              <FieldLabel className="text-xs">Payment Order</FieldLabel>
+              <Input
+                value={paymentOrder}
+                onChange={(e) => setPaymentOrder(e.target.value)}
+                required
+              />
+            </Field>
+          )}
 
           <Button type="submit" className="w-full bg-black">
             Fetch Details
@@ -87,7 +105,10 @@ export function RemoveEntryForm() {
           </DialogHeader>
 
           <p className="text-sm">
-            Are you sure you want to delete Order No. <b>{orderNo}</b>?
+            Are you sure you want to delete Sanction Order <b>{sanctionOrder}</b>
+            {entryType === "expenditure" && (
+              <> / Payment Order <b>{paymentOrder}</b></>
+            )}?
           </p>
 
           <DialogFooter className="flex gap-2">
