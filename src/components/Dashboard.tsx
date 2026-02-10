@@ -1,8 +1,8 @@
+import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { DataTable } from './/DataTable'
 import type { Column, Filter } from './DataTable'
-import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion"
 
 import { categories, subCategoriesMap, departments } from '@/models/data'
 
@@ -149,69 +149,82 @@ const expenditureFilters: Filter<Expenditure>[] = [
   { key: "dateTo", type: "date", label: "To Date", filterFn: (row, val) => row.date <= new Date(val) }
 ]
 
+type Tab = "receipts" | "expenditures" | "summary"
+
+const tabs: { value: Tab; label: string }[] = [
+  { value: "receipts", label: "Receipts" },
+  { value: "expenditures", label: "Expenditures" },
+  { value: "summary", label: "Summary" },
+]
+
 export function Dashboard() {
   const navigate = useNavigate()
+  const [activeTab, setActiveTab] = useState<Tab>("summary")
 
   const canModify = true
 
-    return (
-        <>
-        <div className="flex items-center justify-between pb-4">
-          <h1 className="text-4xl font-bold">Dashboard</h1>
-          {
-            canModify &&
-            <div className="flex gap-2">
-              <Button onClick={() => navigate("/add")}>
-                Add Entry
-              </Button>
-              <Button variant="destructive" onClick={() => navigate("/remove")}>
-                Delete Entry
-              </Button>
-            </div>
-          }
-        </div>
+  return (
+    <>
+      <div className="flex items-center justify-between pb-4">
+        <h1 className="text-4xl font-bold">Dashboard</h1>
+        {canModify && (
+          <div className="flex gap-2">
+            <Button onClick={() => navigate("/add")}>Add Entry</Button>
+            <Button variant="destructive" onClick={() => navigate("/remove")}>Delete Entry</Button>
+          </div>
+        )}
+      </div>
 
-        <Accordion type="multiple" defaultValue={["summary"]} className="space-y-4">
+      <div className="relative flex w-full rounded-lg bg-muted p-1 mb-6">
+        <div
+          className="absolute top-1 bottom-1 rounded-md bg-white transition-all duration-200"
+          style={{
+            width: `calc(${100 / tabs.length}% - 2px)`,
+            left: `calc(${(tabs.findIndex(t => t.value === activeTab) / tabs.length) * 100}% + 1px)`,
+          }}
+        />
+        {tabs.map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => setActiveTab(tab.value)}
+            className={`relative z-10 flex-1 py-1.5 text-sm font-medium rounded-md transition-colors duration-200 ${
+              activeTab === tab.value ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-            <AccordionItem value="receipts">
-            <AccordionTrigger className="text-lg font-semibold hover:no-underline">Receipts</AccordionTrigger>
-            <AccordionContent>
-                <DataTable
-                data={receipts}
-                columns={receiptColumns}
-                filters={receiptFilters}
-                defaultSort="date"
-                />
-            </AccordionContent>
-            </AccordionItem>
+      {/* Tab content */}
+      {activeTab === "receipts" && (
+        <DataTable
+          data={receipts}
+          columns={receiptColumns}
+          filters={receiptFilters}
+          defaultSort="date"
+        />
+      )}
 
-            <AccordionItem value="expenditures">
-            <AccordionTrigger className="text-lg font-semibold hover:no-underline">Expenditures</AccordionTrigger>
-            <AccordionContent>
-                <DataTable
-                data={expenditures}
-                columns={expenditureColumns}
-                filters={expenditureFilters}
-                defaultSort="date"
-                dynamicSelectOptions={{ subCategory: (fv) => fv.category ? subCategoriesMap[fv.category] : allSubCategories }}
-                />
-            </AccordionContent>
-            </AccordionItem>
+      {activeTab === "expenditures" && (
+        <DataTable
+          data={expenditures}
+          columns={expenditureColumns}
+          filters={expenditureFilters}
+          defaultSort="date"
+          dynamicSelectOptions={{ subCategory: (fv) => fv.category ? subCategoriesMap[fv.category] : allSubCategories }}
+        />
+      )}
 
-            <AccordionItem value="summary">
-            <AccordionTrigger className="text-lg font-semibold hover:no-underline">Summary</AccordionTrigger>
-            <AccordionContent>
-                <DataTable
-                data={generateCategorySummary()}
-                columns={categorySummaryColumns}
-                defaultSort="category"
-                showResultCount={false}
-                performPagination={false}
-                />
-            </AccordionContent>
-            </AccordionItem>
-
-        </Accordion>
-        </>
-    )
+      {activeTab === "summary" && (
+        <DataTable
+          data={generateCategorySummary()}
+          columns={categorySummaryColumns}
+          defaultSort="category"
+          showResultCount={false}
+          performPagination={false}
+        />
+      )}
+    </>
+  )
 }
