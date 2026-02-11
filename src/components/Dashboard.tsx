@@ -181,6 +181,7 @@ export function Dashboard() {
       key: "_index",
       label: "Actions",
       format: (_, row) => (
+        canModify ? 
         <EditDeleteDialog
           row={row}
           fields={receiptFields}
@@ -192,7 +193,7 @@ export function Dashboard() {
             }
             return String(value ?? "")
           }}
-        />
+        /> : <>-</>
       )
     }
   ]
@@ -229,6 +230,7 @@ export function Dashboard() {
       key: "_index",
       label: "Actions",
       format: (_, row) => (
+        canModify ?
         <EditDeleteDialog
           row={row}
           fields={expenditureFields}
@@ -240,7 +242,7 @@ export function Dashboard() {
             }
             return String(value ?? "")
           }}
-        />
+        /> : <>-</>
       )
     }
   ]

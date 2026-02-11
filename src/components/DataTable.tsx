@@ -41,7 +41,7 @@ export function DataTable<T extends Record<string, unknown>>({
   defaultSort,
   title,
   dynamicSelectOptions = {},
-  rowsPerPage = 10,
+  rowsPerPage = 5,
   performPagination = true,
   showResultCount = true,
   truncateLength = 36,
