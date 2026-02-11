@@ -1,11 +1,12 @@
-import { useState } from "react"
-import { useNavigate } from "react-router-dom"
+import React, { useState, useMemo } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DataTable } from './DataTable'
 import type { Column, Filter } from './DataTable'
 import { EditDeleteDialog } from './EditDeleteDialog'
 import { AddEntryDialog } from './AddEntryDialog'
+import { Bar, BarChart, Cell } from "recharts"
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 
 import { categories, subCategoriesMap, departments } from '@/models/data'
 
@@ -17,6 +18,12 @@ const formatINR = (value: number) => {
   const absVal = Math.abs(value)
   return `${value < 0 ? "- " : ""}₹${absVal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
 }
+
+const categoryColors = ["blue", "green", "orange"]
+
+const chartConfig = {
+  amount: { label: "Expenditure" },
+} satisfies ChartConfig
 
 type Receipt = { date: Date; sanctionOrder: string; category: string; amount: number; attachment?: string }
 type Expenditure = { date: Date; billNo: string; voucherNo: string; category: string; subCategory: string; department: string; amount: number; attachment?: string }
@@ -50,17 +57,10 @@ const generateExpenditures = (count: number): Expenditure[] =>
 
 type SubCategorySummary = {
   subCategory: string
+  parentCategory: string
   totalReceipts: number
   totalExpenditure: number
   balance: number
-}
-
-type CategorySummary = {
-  category: string
-  totalReceipts: number
-  totalExpenditure: number
-  balance: number
-  subCategories: SubCategorySummary[]
 }
 
 const allSubCategories = Object.values(subCategoriesMap).flat()
@@ -74,7 +74,6 @@ const tabs: { value: Tab; label: string }[] = [
 ]
 
 export function Dashboard() {
-  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<Tab>("summary")
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [receipts, setReceipts] = useState<Receipt[]>(generateReceipts(100))
@@ -267,7 +266,7 @@ export function Dashboard() {
     { key: "dateTo", type: "date", label: "To Date", filterFn: (row, val) => row.date <= new Date(val) }
   ]
 
-  const generateCategorySummary = (): CategorySummary[] => {
+  const summaryCategoryData = useMemo(() => {
     return categories.map(category => {
       const totalReceipts = receipts.filter(r => r.category === category).reduce((sum, r) => sum + r.amount, 0)
       const totalExpenditures = expenditures.filter(e => e.category === category).reduce((sum, e) => sum + e.amount, 0)
@@ -277,13 +276,22 @@ export function Dashboard() {
         const subExpenditure = expenditures
           .filter(e => e.category === category && e.subCategory === sub)
           .reduce((sum, e) => sum + e.amount, 0)
-        return { subCategory: sub, totalReceipts: subReceipts, totalExpenditure: subExpenditure, balance: subReceipts - subExpenditure }
+        return { 
+          subCategory: sub, 
+          parentCategory: category,
+          totalReceipts: subReceipts, 
+          totalExpenditure: subExpenditure, 
+          balance: subReceipts - subExpenditure 
+        }
       })
       return { category, totalReceipts, totalExpenditure: totalExpenditures, balance: totalReceipts - totalExpenditures, subCategories }
     })
-  }
+  }, [receipts, expenditures])
 
-  const summaryCategoryData = generateCategorySummary()
+  const chartData = useMemo(() => {
+    if (expandedRows.size === 0) return summaryCategoryData.flatMap(cat => cat.subCategories)
+    return summaryCategoryData.filter(cat => expandedRows.has(cat.category)).flatMap(cat => cat.subCategories)
+  }, [summaryCategoryData, expandedRows])
 
   const receiptsWithIndex = receipts.map((r, i) => ({ ...r, _index: i }))
   const expendituresWithIndex = expenditures.map((e, i) => ({ ...e, _index: i }))
@@ -306,7 +314,6 @@ export function Dashboard() {
         ))}
       </div>
 
-      {/* Tab content */}
       {activeTab === "receipts" && (
         <>
           <div className="flex justify-end">
@@ -346,18 +353,40 @@ export function Dashboard() {
         </>
       )}
 
-      {activeTab === "summary" && (() => {
-        const totalReceipts = summaryCategoryData.reduce((sum, row) => sum + row.totalReceipts, 0)
-        const totalExpenditure = summaryCategoryData.reduce((sum, row) => sum + row.totalExpenditure, 0)
-        const totalBalance = totalReceipts - totalExpenditure
-        const totalPct = totalReceipts > 0
-          ? Math.min((totalExpenditure / totalReceipts) * 100, 100)
-          : 0
-        return (
-          <div className="overflow-hidden">
+      {activeTab === "summary" && (
+        <div className="space-y-2">
+          <div className="flex flex-col items-center px-8 py-4 rounded-lg border">
+            <h3 className="text-md font-semibold mb-2 text-muted-foreground self-start">Expenditure Breakdown</h3>
+            <ChartContainer config={chartConfig} className="h-80 w-full max-w-4xl">
+              <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                <ChartTooltip 
+                  content={
+                    <ChartTooltipContent 
+                      formatter={(value, _, item) => (
+                        <div className="flex flex-col">
+                          <span className="text-xs font-bold">
+                            {item.payload.parentCategory}
+                          </span>
+                          <span className="text-xs font-semibold">{item.payload.subCategory}</span>
+                          <span className="text-lg font-semibold text-primary">{formatINR(Number(value))}</span>
+                        </div>
+                      )}
+                    />
+                  } 
+                />
+                <Bar dataKey="totalExpenditure" radius={[8, 8, 0, 0]}>
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={categoryColors[categories.indexOf(entry.parentCategory) % categoryColors.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ChartContainer>
+          </div>
+
+          <div className="overflow-hidden border rounded-lg">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b bg-muted/50">
+                <tr className="border-b bg-muted">
                   <th className="px-4 py-3 text-left font-medium w-8" />
                   <th className="px-4 py-3 text-left font-medium">Category</th>
                   <th className="px-4 py-3 text-right font-medium">Total Receipts</th>
@@ -366,39 +395,26 @@ export function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {summaryCategoryData.map((row) => {
+                {summaryCategoryData.map((row, idx) => {
                   const isExpanded = expandedRows.has(row.category)
+                  const color = categoryColors[idx % categoryColors.length]
                   const hasSubCategories = row.subCategories.length > 0
-                  const pct = row.totalReceipts > 0
-                    ? Math.min((row.totalExpenditure / row.totalReceipts) * 100, 100)
-                    : 0
+                  const pct = row.totalReceipts > 0 ? Math.min((row.totalExpenditure / row.totalReceipts) * 100, 100) : 0
+                  
                   return (
-                    <>
+                    <React.Fragment key={row.category}>
                       <tr
-                        key={row.category}
                         onClick={() => hasSubCategories && toggleRow(row.category)}
                         className={`border-b transition-colors ${hasSubCategories ? "cursor-pointer hover:bg-muted/50" : ""}`}
                       >
                         <td className="px-4 py-3 text-muted-foreground">
-                          {hasSubCategories
-                            ? isExpanded
-                              ? <ChevronDown className="h-4 w-4" />
-                              : <ChevronRight className="h-4 w-4" />
-                            : null
-                          }
+                          {hasSubCategories ? (isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />) : null}
                         </td>
                         <td className="px-4 py-3 font-medium">
                           <div className="mb-1.5">{row.category}</div>
-                          {row.balance < 0 ? (
-                            <div className="h-1.5 w-full rounded-sm bg-red-700" />
-                          ) : (
-                            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                              <div
-                                className="h-full rounded-full bg-blue-700 transition-all duration-300"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                          )}
+                          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                            <div className="h-full transition-all duration-300" style={{ width: `${pct}%`, backgroundColor: color }} />
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-right">{formatINR(row.totalReceipts)}</td>
                         <td className="px-4 py-3 text-right">{formatINR(row.totalExpenditure)}</td>
@@ -408,7 +424,7 @@ export function Dashboard() {
                       </tr>
 
                       {isExpanded && row.subCategories.map((sub) => (
-                        <tr key={`${row.category}-${sub.subCategory}`} className="border-b bg-muted/20">
+                        <tr key={`${row.category}-${sub.subCategory}`} className="border-b bg-muted">
                           <td className="px-4 py-2" />
                           <td className="px-4 py-2 pl-8 text-muted-foreground">{sub.subCategory}</td>
                           <td className="px-4 py-2 text-right text-muted-foreground">—</td>
@@ -418,37 +434,14 @@ export function Dashboard() {
                           </td>
                         </tr>
                       ))}
-                    </>
+                    </React.Fragment>
                   )
                 })}
               </tbody>
-              <tfoot>
-                <tr className="border-t-2 bg-muted/50">
-                  <td className="px-4 py-3" />
-                  <td className="px-4 py-3 font-bold">
-                    <div className="mb-1.5">Total</div>
-                    {totalBalance < 0 ? (
-                      <div className="h-1.5 w-full rounded-sm bg-red-700" />
-                    ) : (
-                      <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-blue-700 transition-all duration-300"
-                          style={{ width: `${totalPct}%` }}
-                        />
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right font-bold">{formatINR(totalReceipts)}</td>
-                  <td className="px-4 py-3 text-right font-bold">{formatINR(totalExpenditure)}</td>
-                  <td className={`px-4 py-3 text-right font-bold ${totalBalance < 0 ? "text-red-700" : "text-green-700"}`}>
-                    {formatINR(totalBalance)}
-                  </td>
-                </tr>
-              </tfoot>
             </table>
           </div>
-        )
-      })()}
+        </div>
+      )}
     </>
   )
 }
