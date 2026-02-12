@@ -1,3 +1,4 @@
+import * as XLSX from "xlsx"
 import React, { useState, useMemo } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -24,6 +25,15 @@ const chartConfig = {
 } satisfies ChartConfig
 
 type Receipt = { date: Date; sanctionOrder: string; category: string; amount: number; attachment?: string }
+type Allocation = {
+  date: Date
+  allocationNumber: string
+  category: string
+  subCategory: string
+  department: string
+  allocatedAmount: number
+}
+
 type Expenditure = { date: Date; billNo: string; voucherNo: string; category: string; subCategory: string; department: string; amount: number; attachment?: string }
 
 const generateReceipts = (count: number): Receipt[] =>
@@ -34,6 +44,25 @@ const generateReceipts = (count: number): Receipt[] =>
     amount: randomAmount(100000),
     attachment: Math.random() > 0.5 ? "https://example.com/file.pdf" : undefined
   }))
+
+const generateAllocations = (count: number): Allocation[] =>
+  Array.from({ length: count }, () => {
+    const category = randomItem(categories)
+    const subCategories = subCategoriesMap[category]
+
+    return {
+      date: randomDate(),
+      allocationNumber: `AL-${1000 + Math.floor(Math.random() * 9000)}`,
+      category,
+      subCategory: randomItem(subCategories),
+      department:
+        category === "OH-35 Grants for Creation of Capital Assets"
+          ? randomItem(departments.slice(1))
+          : "-",
+      allocatedAmount: randomAmount(300000),
+    }
+  })
+
 
 const generateExpenditures = (count: number): Expenditure[] =>
   Array.from({ length: count }, () => {
@@ -53,6 +82,14 @@ const generateExpenditures = (count: number): Expenditure[] =>
     }
   })
 
+  const exportToExcel = (data: any[], fileName: string) => {
+  const worksheet = XLSX.utils.json_to_sheet(data)
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Data")
+
+  XLSX.writeFile(workbook, `${fileName}.xlsx`)
+}
+
 type SubCategorySummary = {
   subCategory: string
   parentCategory: string
@@ -63,10 +100,11 @@ type SubCategorySummary = {
 
 const allSubCategories = Object.values(subCategoriesMap).flat()
 
-type Tab = "receipts" | "expenditures" | "summary"
+type Tab = "receipts" | "allocation" | "expenditures" | "summary"
 
 const tabs: { value: Tab; label: string }[] = [
   { value: "summary", label: "Summary" },
+  { value: "allocation", label: "Allocation" },
   { value: "receipts", label: "Receipts" },
   { value: "expenditures", label: "Expenditures" },
 ]
@@ -75,8 +113,28 @@ export function Dashboard() {
   const [scale, setScale] = useState<Scale>("absolute")
   const [activeTab, setActiveTab] = useState<Tab>("summary")
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [allocations, setAllocations] = useState<Allocation[]>(generateAllocations(20))
   const [receipts, setReceipts] = useState<Receipt[]>(generateReceipts(100))
   const [expenditures, setExpenditures] = useState<Expenditure[]>(generateExpenditures(150))
+
+    const formatDateForExport = (date: Date) =>
+    date.toLocaleDateString("en-IN")
+
+    const getFY = (date: Date) => {
+      const year = date.getFullYear()
+      const month = date.getMonth() + 1
+      return month >= 4 ? `${year}-${year + 1}` : `${year - 1}-${year}`
+    }
+    
+
+  const allocationExportData = allocations.map(a => ({
+    Date: formatDateForExport(a.date),
+    AllocationNumber: a.allocationNumber,
+    Category: a.category,
+    SubCategory: a.subCategory,
+    Department: a.department,
+    AllocatedAmount: a.allocatedAmount,
+  }))
 
   const formatINR = (value: number) => {
     let displayValue = value;
@@ -129,6 +187,9 @@ export function Dashboard() {
   const handleReceiptDelete = (index: number) => () => {
     setReceipts(prev => prev.filter((_, i) => i !== index))
   }
+const handleAllocationAdd = (newAllocation: Allocation) => {
+  setAllocations(prev => [newAllocation, ...prev])
+}
 
   const handleExpenditureAdd = (newExpenditure: Expenditure) => {
     setExpenditures(prev => [newExpenditure, ...prev])
@@ -153,6 +214,22 @@ export function Dashboard() {
     { key: "amount", label: "Amount", type: "number" as const, required: true },
     { key: "attachment", label: "Attachment URL", type: "text" as const, required: false },
   ]
+const allocationFields = [
+  { key: "date", label: "Date", type: "date" as const, required: true },
+  { key: "allocationNumber", label: "Allocation Number", type: "text" as const, required: true },
+  { key: "category", label: "OH Category", type: "select" as const, options: categories, required: true },
+  { 
+    key: "subCategory", 
+    label: "OH Sub-category", 
+    type: "select" as const, 
+    required: true,
+    dependsOn: "category",
+    getDynamicOptions: (formData: any) =>
+      formData.category ? subCategoriesMap[formData.category] : []
+  },
+  { key: "department", label: "Department", type: "select" as const, options: ["-", ...departments.slice(1)], required: true },
+  { key: "allocatedAmount", label: "Allocated Amount", type: "number" as const, required: true },
+]
 
   const expenditureFields = [
     { key: "date", label: "Date", type: "date" as const, required: true },
@@ -218,6 +295,28 @@ export function Dashboard() {
     }
   ]
 
+const allocationColumns: Column<Allocation & { _index: number }>[] = [
+  {
+    key: "date",
+    label: "Date",
+    sortable: true,
+    format: d => d instanceof Date
+      ? d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+      : String(d)
+  },
+  { key: "allocationNumber", label: "Allocation No.", sortable: true },
+  { key: "category", label: "OH Category", sortable: true },
+  { key: "subCategory", label: "OH Sub-category", sortable: true },
+  { key: "department", label: "Department", sortable: true },
+  {
+    key: "allocatedAmount",
+    label: "Allocated Amount",
+    sortable: true,
+    className: "text-right",
+    format: a => typeof a === "number" ? formatINR(a) : "-"
+  }
+]
+const allocationsWithIndex = allocations.map((a, i) => ({ ...a, _index: i }))
   const expenditureColumns: Column<Expenditure & { _index: number }>[] = [
     {
       key: "date",
@@ -274,6 +373,17 @@ export function Dashboard() {
     { key: "amountMax", type: "number", label: "Max Amount", placeholder: "Max ₹", filterFn: (row, val) => row.amount <= Number(val) },
     { key: "dateFrom", type: "date", label: "From Date", filterFn: (row, val) => row.date >= new Date(val) },
     { key: "dateTo", type: "date", label: "To Date", filterFn: (row, val) => row.date <= new Date(val) }
+  ]
+const allocationFilters: Filter<Allocation>[] = [
+    { key: "allocationNumber", type: "text", label: "Allocation No.", placeholder: "Search Allocation No." },
+    { key: "department", type: "select", label: "Department", options: ["-", ...departments.slice(1)] },
+    { key: "allocationMin", type: "number", label: "Min Allocation", placeholder: "Min ₹", filterFn: (row, val) => row.allocatedAmount >= Number(val) },
+    { key: "allocationMax", type: "number", label: "Max Allocation", placeholder: "Max ₹", filterFn: (row, val) => row.allocatedAmount <= Number(val) },
+    { key: "dateFrom", type: "date", label: "From Date", filterFn: (row, val) => row.date >= new Date(val) },
+    { key: "dateTo", type: "date", label: "To Date", filterFn: (row, val) => row.date <= new Date(val) },
+    { key: "category", type: "select", label: "Category", options: categories },
+    { key: "subCategory", type: "select", label: "Sub-category" },
+    { key: "fy", type: "select", label: "Financial Year", options: Array.from(new Set(allocations.map(a => getFY(a.date)))), filterFn: (row, val) => getFY(row.date) === val },
   ]
 
   const expenditureFilters: Filter<Expenditure>[] = [
@@ -375,6 +485,37 @@ export function Dashboard() {
           />
         </>
       )}
+      {activeTab === "allocation" && (
+        <>
+          <div className="flex justify-between">
+            <AddEntryDialog
+              fields={allocationFields}
+              onAdd={handleAllocationAdd}
+              title="Add / Revise Fund"
+              buttonLabel="Add / Revise Fund"
+            />
+
+            <Button
+              variant="outline"
+              onClick={() => exportToExcel(allocationExportData, "Allocations")}
+            >
+              Download Excel
+            </Button>
+          </div>
+
+          <DataTable
+            data={allocations.map((a, i) => ({ ...a, _index: i }))}
+            columns={allocationColumns}
+            filters={allocationFilters}
+            defaultSort="date"
+            dynamicSelectOptions={{
+              subCategory: (fv) =>
+                fv.category ? subCategoriesMap[fv.category] : allSubCategories
+            }}
+          />
+        </>
+      )}
+
 
       {activeTab === "expenditures" && (
         <>
