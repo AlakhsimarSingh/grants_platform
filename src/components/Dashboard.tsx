@@ -3,6 +3,9 @@ import React, { useState, useMemo } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DataTable } from './DataTable'
 import type { Column, Filter } from './DataTable'
 import { EditDeleteDialog } from './EditDeleteDialog'
@@ -100,13 +103,14 @@ type SubCategorySummary = {
 
 const allSubCategories = Object.values(subCategoriesMap).flat()
 
-type Tab = "receipts" | "allocation" | "expenditures" | "summary"
+type Tab = "receipts" | "allocation" | "expenditures" | "reports" | "summary"
 
 const tabs: { value: Tab; label: string }[] = [
   { value: "summary", label: "Summary" },
   { value: "allocation", label: "Allocation" },
   { value: "receipts", label: "Receipts" },
   { value: "expenditures", label: "Expenditures" },
+  { value: "reports", label: "Reports" },
 ]
 
 export function Dashboard() {
@@ -116,6 +120,13 @@ export function Dashboard() {
   const [allocations, setAllocations] = useState<Allocation[]>(generateAllocations(20))
   const [receipts, setReceipts] = useState<Receipt[]>(generateReceipts(100))
   const [expenditures, setExpenditures] = useState<Expenditure[]>(generateExpenditures(150))
+  const [reportType, setReportType] = useState<"expenditure" | "receipts" | null>(null)
+  const [filterType, setFilterType] = useState<"dateRange" | "financialYear" | null>(null)
+  const [startDate, setStartDate] = useState<string>("")
+  const [endDate, setEndDate] = useState<string>("")
+  const [selectedFinancialYear, setSelectedFinancialYear] = useState<string>("")
+  const [selectedCategory, setSelectedCategory] = useState<string>("")
+  const [selectedDepartment, setSelectedDepartment] = useState<string>("")
 
     const formatDateForExport = (date: Date) =>
     date.toLocaleDateString("en-IN")
@@ -424,8 +435,77 @@ const allocationFilters: Filter<Allocation>[] = [
     return summaryCategoryData.filter(cat => expandedRows.has(cat.category)).flatMap(cat => cat.subCategories)
   }, [summaryCategoryData, expandedRows])
 
+  const financialYears = useMemo(() => {
+    const allDates = [
+      ...receipts.map(r => r.date),
+      ...expenditures.map(e => e.date),
+      ...allocations.map(a => a.date)
+    ]
+    const uniqueFYs = Array.from(new Set(allDates.map(date => getFY(date))))
+    return uniqueFYs.sort().reverse()
+  }, [receipts, expenditures, allocations])
+
   const receiptsWithIndex = receipts.map((r, i) => ({ ...r, _index: i }))
   const expendituresWithIndex = expenditures.map((e, i) => ({ ...e, _index: i }))
+
+  // Filter data for reports
+  const filteredReportData = useMemo(() => {
+    if (!reportType || !filterType) return []
+
+    let data: (Receipt | Expenditure)[] = reportType === "expenditure" ? expenditures : receipts
+
+    // Apply date range or financial year filter
+    if (filterType === "dateRange") {
+      if (startDate) {
+        const start = new Date(startDate)
+        data = data.filter(item => item.date >= start)
+      }
+      if (endDate) {
+        const end = new Date(endDate)
+        end.setHours(23, 59, 59, 999) // Include the entire end date
+        data = data.filter(item => item.date <= end)
+      }
+    } else if (filterType === "financialYear" && selectedFinancialYear) {
+      data = data.filter(item => getFY(item.date) === selectedFinancialYear)
+    }
+
+    // Apply additional filters for expenditure
+    if (reportType === "expenditure") {
+      const expData = data as Expenditure[]
+      if (selectedCategory) {
+        data = expData.filter(item => item.category === selectedCategory)
+      }
+      if (selectedDepartment) {
+        data = expData.filter(item => item.department === selectedDepartment)
+      }
+    }
+
+    return data
+  }, [reportType, filterType, startDate, endDate, selectedFinancialYear, selectedCategory, selectedDepartment, expenditures, receipts])
+
+  // Prepare export data
+  const reportExportData = useMemo(() => {
+    if (reportType === "expenditure") {
+      return (filteredReportData as Expenditure[]).map(e => ({
+        Date: formatDateForExport(e.date),
+        "Bill No.": e.billNo,
+        "Voucher No.": e.voucherNo,
+        "OH Category": e.category,
+        "OH Sub-category": e.subCategory,
+        Department: e.department,
+        Amount: e.amount,
+        Attachment: e.attachment || ""
+      }))
+    } else {
+      return (filteredReportData as Receipt[]).map(r => ({
+        Date: formatDateForExport(r.date),
+        "Sanction Order": r.sanctionOrder,
+        "OH Category": r.category,
+        Amount: r.amount,
+        Attachment: r.attachment || ""
+      }))
+    }
+  }, [filteredReportData, reportType])
 
   return (
     <>
@@ -535,6 +615,263 @@ const allocationFilters: Filter<Allocation>[] = [
             dynamicSelectOptions={{ subCategory: (fv) => fv.category ? subCategoriesMap[fv.category] : allSubCategories }}
           />
         </>
+      )}
+
+      {activeTab === "reports" && (
+        <div className="space-y-6">
+          <div className="rounded-lg border p-6">
+            <h2 className="text-xl font-semibold mb-6">View Report</h2>
+            
+            {/* Report Type Selection */}
+            <div className="space-y-4 mb-6">
+              <Label className="text-base font-medium">Select Report Type</Label>
+              <div className="flex gap-6">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    id="report-expenditure"
+                    name="reportType"
+                    value="expenditure"
+                    checked={reportType === "expenditure"}
+                    onChange={(e) => {
+                      setReportType(e.target.value as "expenditure")
+                      setFilterType(null)
+                      setStartDate("")
+                      setEndDate("")
+                      setSelectedFinancialYear("")
+                      setSelectedCategory("")
+                      setSelectedDepartment("")
+                    }}
+                    className="h-4 w-4 text-primary focus:ring-primary"
+                  />
+                  <Label htmlFor="report-expenditure" className="cursor-pointer">
+                    Expenditure
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    id="report-receipts"
+                    name="reportType"
+                    value="receipts"
+                    checked={reportType === "receipts"}
+                    onChange={(e) => {
+                      setReportType(e.target.value as "receipts")
+                      setFilterType(null)
+                      setStartDate("")
+                      setEndDate("")
+                      setSelectedFinancialYear("")
+                      setSelectedCategory("")
+                      setSelectedDepartment("")
+                    }}
+                    className="h-4 w-4 text-primary focus:ring-primary"
+                  />
+                  <Label htmlFor="report-receipts" className="cursor-pointer">
+                    Receipts
+                  </Label>
+                </div>
+              </div>
+            </div>
+
+            {/* Filter Options - Only show when report type is selected */}
+            {reportType && (
+              <div className="space-y-4 border-t pt-6">
+                <Label className="text-base font-medium">Select Filter Type</Label>
+                <div className="flex gap-6 mb-6">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="filter-dateRange"
+                      name="filterType"
+                      value="dateRange"
+                      checked={filterType === "dateRange"}
+                      onChange={() => {
+                        setFilterType("dateRange")
+                        setSelectedFinancialYear("")
+                      }}
+                      className="h-4 w-4 text-primary focus:ring-primary"
+                    />
+                    <Label htmlFor="filter-dateRange" className="cursor-pointer">
+                      Date Range
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="filter-financialYear"
+                      name="filterType"
+                      value="financialYear"
+                      checked={filterType === "financialYear"}
+                      onChange={() => {
+                        setFilterType("financialYear")
+                        setStartDate("")
+                        setEndDate("")
+                      }}
+                      className="h-4 w-4 text-primary focus:ring-primary"
+                    />
+                    <Label htmlFor="filter-financialYear" className="cursor-pointer">
+                      Financial Year
+                    </Label>
+                  </div>
+                </div>
+
+                {/* Date Range Inputs */}
+                {filterType === "dateRange" && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="startDate">Start Date</Label>
+                      <Input
+                        id="startDate"
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="endDate">End Date</Label>
+                      <Input
+                        id="endDate"
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Financial Year Select */}
+                {filterType === "financialYear" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="financialYear">Financial Year</Label>
+                    <Select
+                      value={selectedFinancialYear}
+                      onValueChange={setSelectedFinancialYear}
+                    >
+                      <SelectTrigger id="financialYear" className="w-full max-w-xs">
+                        <SelectValue placeholder="Select Financial Year" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {financialYears.map((fy) => (
+                          <SelectItem key={fy} value={fy}>
+                            {fy}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* Additional Filters for Expenditure */}
+                {reportType === "expenditure" && (
+                  <div className="space-y-4 border-t pt-6 mt-6">
+                    <Label className="text-base font-medium">Additional Filters</Label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="reportCategory">OH Category</Label>
+                        <Select
+                          value={selectedCategory || "all"}
+                          onValueChange={(value) => setSelectedCategory(value === "all" ? "" : value)}
+                        >
+                          <SelectTrigger id="reportCategory" className="w-full">
+                            <SelectValue placeholder="Select OH Category" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Categories</SelectItem>
+                            {categories.map((cat) => (
+                              <SelectItem key={cat} value={cat}>
+                                {cat}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="reportDepartment">Department</Label>
+                        <Select
+                          value={selectedDepartment || "all"}
+                          onValueChange={(value) => setSelectedDepartment(value === "all" ? "" : value)}
+                        >
+                          <SelectTrigger id="reportDepartment" className="w-full">
+                            <SelectValue placeholder="Select Department" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Departments</SelectItem>
+                            {["-", ...departments.slice(1)].map((dept) => (
+                              <SelectItem key={dept} value={dept}>
+                                {dept}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Display filtered results */}
+            {reportType && filterType && filteredReportData.length > 0 && (
+              <div className="mt-8 space-y-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-semibold">
+                    {reportType === "expenditure" ? "Expenditure" : "Receipts"} Report
+                    <span className="text-sm font-normal text-muted-foreground ml-2">
+                      ({filteredReportData.length} {filteredReportData.length === 1 ? "record" : "records"})
+                    </span>
+                  </h3>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const fileName = `${reportType === "expenditure" ? "Expenditure" : "Receipts"}_Report_${new Date().toISOString().split('T')[0]}`
+                      exportToExcel(reportExportData, fileName)
+                    }}
+                  >
+                    Download Excel
+                  </Button>
+                </div>
+                {reportType === "expenditure" && (
+                  <DataTable<(Expenditure & { _index: number })>
+                    data={(filteredReportData as Expenditure[]).map((e) => {
+                      const originalIndex = expenditures.findIndex(exp => 
+                        exp.date.getTime() === e.date.getTime() &&
+                        exp.billNo === e.billNo &&
+                        exp.voucherNo === e.voucherNo &&
+                        exp.amount === e.amount
+                      )
+                      return { ...e, _index: originalIndex >= 0 ? originalIndex : 0 }
+                    })}
+                    columns={expenditureColumns}
+                    filters={[]}
+                    defaultSort="date"
+                  />
+                )}
+                {reportType === "receipts" && (
+                  <DataTable<(Receipt & { _index: number })>
+                    data={(filteredReportData as Receipt[]).map((r) => {
+                      const originalIndex = receipts.findIndex(rec => 
+                        rec.date.getTime() === r.date.getTime() &&
+                        rec.sanctionOrder === r.sanctionOrder &&
+                        rec.amount === r.amount
+                      )
+                      return { ...r, _index: originalIndex >= 0 ? originalIndex : 0 }
+                    })}
+                    columns={receiptColumns}
+                    filters={[]}
+                    defaultSort="date"
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Show message when filters are applied but no data matches */}
+            {reportType && filterType && filteredReportData.length === 0 && (
+              <div className="mt-8 rounded-lg border p-8 text-center text-muted-foreground">
+                No records found matching the selected filters.
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {activeTab === "summary" && (
