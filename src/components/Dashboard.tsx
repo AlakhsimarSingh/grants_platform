@@ -509,8 +509,24 @@ const allocationFilters: Filter<Allocation>[] = [
 
   return (
     <>
-      <div className="flex items-center justify-between pb-4">
-        <h1 className="text-4xl flex flex-row justify-center w-full font-bold pb-16">Ministry Grants Receipts & Expenditures</h1>
+      <div className="flex items-start justify-between pb-4">
+        <div className="pt-2">
+          <img
+            src="https://departments.nitj.ac.in/static/media/logo.f2c76d0937070ba81dc0.png"
+            alt="NIT Jalandhar Logo"
+            className="h-16 w-16 object-contain"
+          />
+        </div>
+        <div className="flex-1 flex flex-col items-center pb-8">
+          <div className="text-3xl font-extrabold text-center mb-2">
+            Dr B R Ambedkar National Institute of Technology Jalandhar
+          </div>
+          <h1 className="text-2xl font-bold text-center">
+            Ministry Grants Receipts & Expenditures
+          </h1>
+        </div>
+        {/* spacer to keep center alignment with logo on the left */}
+        <div className="h-16 w-16" />
       </div>
 
 
