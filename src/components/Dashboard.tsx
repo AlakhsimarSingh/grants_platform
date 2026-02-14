@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx"
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useEffect } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -127,18 +127,151 @@ export function Dashboard() {
   const [selectedFinancialYear, setSelectedFinancialYear] = useState<string>("")
   const [selectedCategory, setSelectedCategory] = useState<string>("")
   const [selectedDepartment, setSelectedDepartment] = useState<string>("")
-
     const formatDateForExport = (date: Date) =>
     date.toLocaleDateString("en-IN")
+
+    type AllocationFilters = {
+      allocationNumber?: string
+      department?: string
+      category?: string
+      subCategory?: string
+      ohCategory?: string
+      fy?: string
+      dateFrom?: string
+      dateTo?: string
+      minAmount?: string
+      maxAmount?: string
+    }
+
+
+    const [allocationFilterValues, setAllocationFilterValues] = useState<AllocationFilters>({})
+    useEffect(() => {
+      setAllocationPage(1)
+    }, [allocationFilterValues])
 
     const getFY = (date: Date) => {
       const year = date.getFullYear()
       const month = date.getMonth() + 1
       return month >= 4 ? `${year}-${year + 1}` : `${year - 1}-${year}`
     }
-    
+    // 🔹 Master OH category list
+  const allOHCategories = categories
+  const [allocationPage, setAllocationPage] = useState(1)
+  const allocationsPerPage = 1
 
-  const allocationExportData = allocations.map(a => ({
+  // 🔹 Group allocations by allocation number
+    const filteredAllocations = useMemo(() => {
+      return allocations.filter(a => {
+        const amount = Number(a.allocatedAmount)
+        const date = new Date(a.date)
+
+        if (allocationFilterValues.allocationNumber &&
+            !a.allocationNumber.toLowerCase().includes(allocationFilterValues.allocationNumber.toLowerCase()))
+          return false
+
+        if (allocationFilterValues.department && a.department !== allocationFilterValues.department) return false
+        if (allocationFilterValues.category && a.category !== allocationFilterValues.category) return false
+        if (allocationFilterValues.subCategory && a.subCategory !== allocationFilterValues.subCategory) return false
+        if (allocationFilterValues.ohCategory && a.category !== allocationFilterValues.ohCategory) return false
+        if (allocationFilterValues.fy && getFY(date) !== allocationFilterValues.fy) return false
+
+        if (allocationFilterValues.dateFrom && date < new Date(allocationFilterValues.dateFrom)) return false
+        if (allocationFilterValues.dateTo && date > new Date(allocationFilterValues.dateTo)) return false
+
+        if (allocationFilterValues.minAmount && amount < Number(allocationFilterValues.minAmount)) return false
+        if (allocationFilterValues.maxAmount && amount > Number(allocationFilterValues.maxAmount)) return false
+
+        return true
+      })
+    }, [allocations, allocationFilterValues])
+
+
+
+const allocationsByNumber = useMemo(() => {
+  const map: Record<string, Allocation[]> = {}
+
+  filteredAllocations.forEach(a => {
+    if (!map[a.allocationNumber]) map[a.allocationNumber] = []
+    map[a.allocationNumber].push(a)
+  })
+
+  return map
+}, [filteredAllocations])
+
+const allocationTables = useMemo(() => {
+  return Object.entries(allocationsByNumber).map(([allocNo, entries]) => {
+    const date = entries[0].date
+
+    const rows = allOHCategories.map(category => {
+      const match = entries.find(e => e.category === category)
+
+      return match || {
+        allocationNumber: allocNo,
+        date,
+        category,
+        subCategory: "-",
+        department: "-",
+        allocatedAmount: 0,
+      }
+    })
+
+    return {
+      allocationNumber: allocNo,
+      date,
+      rows,
+      total: rows.reduce((s, r) => s + r.allocatedAmount, 0),
+    }
+  })
+}, [allocationsByNumber, allOHCategories])
+
+    const groupedAllocations = useMemo(() => {
+      const map: Record<string, Allocation[]> = {}
+
+      allocations.forEach(a => {
+        if (!map[a.allocationNumber]) map[a.allocationNumber] = []
+        map[a.allocationNumber].push(a)
+      })
+
+      return map
+    }, [allocations])
+    const totalAllocationPages = Math.ceil(allocationTables.length / allocationsPerPage)
+
+    const paginatedAllocationTables = useMemo(() => {
+      const start = (allocationPage - 1) * allocationsPerPage
+      return allocationTables.slice(start, start + allocationsPerPage)
+    }, [allocationTables, allocationPage])
+
+    const allocationDisplayRows = useMemo(() => {
+      const rows: any[] = []
+
+      Object.entries(groupedAllocations).forEach(([allocNo, entries]) => {
+        const first = entries[0]
+
+        // Header row
+        rows.push({
+          isHeader: true,
+          allocationNumber: allocNo,
+          date: first.date,
+          category: "",
+          subCategory: "",
+          department: "",
+          allocatedAmount: entries.reduce((sum, e) => sum + e.allocatedAmount, 0),
+        })
+
+        // Detail rows
+        entries.forEach(e => {
+          rows.push({
+            ...e,
+            isHeader: false,
+          })
+        })
+      })
+
+      return rows
+    }, [groupedAllocations])
+
+
+  const allocationExportData = filteredAllocations.map(a => ({
     Date: formatDateForExport(a.date),
     AllocationNumber: a.allocationNumber,
     Category: a.category,
@@ -306,28 +439,61 @@ const allocationFields = [
     }
   ]
 
-const allocationColumns: Column<Allocation & { _index: number }>[] = [
+const allocationColumns: Column<any>[] = [
   {
     key: "date",
     label: "Date",
     sortable: true,
-    format: d => d instanceof Date
-      ? d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
-      : String(d)
+    format: (d, row) =>
+      row.isHeader
+        ? d instanceof Date
+          ? d.toLocaleDateString("en-IN")
+          : ""
+        : d instanceof Date
+        ? d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+        : String(d)
   },
-  { key: "allocationNumber", label: "Allocation No.", sortable: true },
-  { key: "category", label: "OH Category", sortable: true },
-  { key: "subCategory", label: "OH Sub-category", sortable: true },
-  { key: "department", label: "Department", sortable: true },
+  {
+    key: "allocationNumber",
+    label: "Allocation No.",
+    sortable: true,
+    format: (val, row) =>
+      row.isHeader ? (
+        <span className="font-bold text-blue-600">
+          {val} (Total)
+        </span>
+      ) : (
+        val
+      ),
+  },
+  {
+    key: "category",
+    label: "OH Category",
+    sortable: true,
+    format: (val, row) => (row.isHeader ? "" : val),
+  },
+  {
+    key: "subCategory",
+    label: "OH Sub-category",
+    sortable: true,
+    format: (val, row) => (row.isHeader ? "" : val),
+  },
+  {
+    key: "department",
+    label: "Department",
+    sortable: true,
+    format: (val, row) => (row.isHeader ? "" : val),
+  },
   {
     key: "allocatedAmount",
     label: "Allocated Amount",
     sortable: true,
     className: "text-right",
-    format: a => typeof a === "number" ? formatINR(a) : "-"
-  }
+    format: (val) =>
+      typeof val === "number" ? formatINR(val) : "-",
+  },
 ]
-const allocationsWithIndex = allocations.map((a, i) => ({ ...a, _index: i }))
+
   const expenditureColumns: Column<Expenditure & { _index: number }>[] = [
     {
       key: "date",
@@ -385,17 +551,7 @@ const allocationsWithIndex = allocations.map((a, i) => ({ ...a, _index: i }))
     { key: "dateFrom", type: "date", label: "From Date", filterFn: (row, val) => row.date >= new Date(val) },
     { key: "dateTo", type: "date", label: "To Date", filterFn: (row, val) => row.date <= new Date(val) }
   ]
-const allocationFilters: Filter<Allocation>[] = [
-    { key: "allocationNumber", type: "text", label: "Allocation No.", placeholder: "Search Allocation No." },
-    { key: "department", type: "select", label: "Department", options: ["-", ...departments.slice(1)] },
-    { key: "allocationMin", type: "number", label: "Min Allocation", placeholder: "Min ₹", filterFn: (row, val) => row.allocatedAmount >= Number(val) },
-    { key: "allocationMax", type: "number", label: "Max Allocation", placeholder: "Max ₹", filterFn: (row, val) => row.allocatedAmount <= Number(val) },
-    { key: "dateFrom", type: "date", label: "From Date", filterFn: (row, val) => row.date >= new Date(val) },
-    { key: "dateTo", type: "date", label: "To Date", filterFn: (row, val) => row.date <= new Date(val) },
-    { key: "category", type: "select", label: "Category", options: categories },
-    { key: "subCategory", type: "select", label: "Sub-category" },
-    { key: "fy", type: "select", label: "Financial Year", options: Array.from(new Set(allocations.map(a => getFY(a.date)))), filterFn: (row, val) => getFY(row.date) === val },
-  ]
+
 
   const expenditureFilters: Filter<Expenditure>[] = [
     { key: "billNo", type: "text", label: "Bill No.", placeholder: "Search Bill No." },
@@ -583,7 +739,7 @@ const allocationFilters: Filter<Allocation>[] = [
       )}
       {activeTab === "allocation" && (
         <>
-          <div className="flex justify-between">
+          <div className="flex justify-between mb-4">
             <AddEntryDialog
               fields={allocationFields}
               onAdd={handleAllocationAdd}
@@ -598,17 +754,180 @@ const allocationFilters: Filter<Allocation>[] = [
               Download Excel
             </Button>
           </div>
+          {/* 🔎 Allocation Filters */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 mt-4">
+            {/* Allocation Number */}
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium">Allocation No.</label>
+              <Input
+                placeholder="Search Allocation No."
+                value={allocationFilterValues.allocationNumber || ""}
+                onChange={e =>
+                  setAllocationFilterValues(p => ({ ...p, allocationNumber: e.target.value }))
+                }
+              />
+            </div>
 
-          <DataTable
-            data={allocations.map((a, i) => ({ ...a, _index: i }))}
-            columns={allocationColumns}
-            filters={allocationFilters}
-            defaultSort="date"
-            dynamicSelectOptions={{
-              subCategory: (fv) =>
-                fv.category ? subCategoriesMap[fv.category] : allSubCategories
-            }}
-          />
+            {/* Financial Year */}
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium">Financial Year</label>
+              <Select
+                value={allocationFilterValues.fy || "all"}
+                onValueChange={v =>
+                  setAllocationFilterValues(p => ({ ...p, fy: v === "all" ? "" : v }))
+                }
+              >
+                <SelectTrigger><SelectValue placeholder="Select FY" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All FY</SelectItem>
+                  {Array.from(new Set(allocations.map(a => getFY(a.date)))).map(fy => (
+                    <SelectItem key={fy} value={fy}>{fy}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Min Amount */}
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium">Min Amount</label>
+              <Input
+                placeholder="Min ₹"
+                type="number"
+                value={allocationFilterValues.minAmount || ""}
+                onChange={e =>
+                  setAllocationFilterValues(p => ({ ...p, minAmount: e.target.value }))
+                }
+              />
+            </div>
+
+            {/* Max Amount */}
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium">Max Amount</label>
+              <Input
+                placeholder="Max ₹"
+                type="number"
+                value={allocationFilterValues.maxAmount || ""}
+                onChange={e =>
+                  setAllocationFilterValues(p => ({ ...p, maxAmount: e.target.value }))
+                }
+              />
+            </div>
+
+            {/* From Date */}
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium">From Date</label>
+              <Input
+                type="date"
+                value={allocationFilterValues.dateFrom || ""}
+                onChange={e =>
+                  setAllocationFilterValues(p => ({ ...p, dateFrom: e.target.value }))
+                }
+              />
+            </div>
+
+            {/* To Date */}
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium">To Date</label>
+              <Input
+                type="date"
+                value={allocationFilterValues.dateTo || ""}
+                onChange={e =>
+                  setAllocationFilterValues(p => ({ ...p, dateTo: e.target.value }))
+                }
+              />
+          </div>
+
+        </div>
+
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            <Select
+              value={allocationFilterValues.department || "all"}
+              onValueChange={v => setAllocationFilterValues(p => ({ ...p, department: v === "all" ? "" : v }))}
+            >
+              <SelectTrigger><SelectValue placeholder="Department" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Departments</SelectItem>
+                {departments.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={allocationFilterValues.category || "all"}
+              onValueChange={v => setAllocationFilterValues(p => ({ ...p, category: v === "all" ? "" : v }))}
+            >
+              <SelectTrigger><SelectValue placeholder="Category" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                {categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={allocationFilterValues.subCategory || "all"}
+              onValueChange={v => setAllocationFilterValues(p => ({ ...p, subCategory: v === "all" ? "" : v }))}
+            >
+              <SelectTrigger><SelectValue placeholder="Sub-category" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sub-categories</SelectItem>
+                {allSubCategories.map(sc => <SelectItem key={sc} value={sc}>{sc}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {paginatedAllocationTables.map(table => (
+            <div key={table.allocationNumber} className="mb-8 border rounded-lg p-4">
+              <div className="flex justify-between mb-3">
+                <h3 className="font-semibold text-lg text-blue-600">
+                  {table.allocationNumber}
+                </h3>
+                <span className="font-semibold">
+                  Total: {formatINR(table.total)}
+                </span>
+              </div>
+
+              <DataTable
+                data={table.rows.map((r, i) => ({ ...r, _index: i }))}
+                columns={allocationColumns}
+                performPagination={false}
+                showResultCount={false}
+              />
+
+            </div>
+          ))}
+          <div className="flex items-center justify-between mt-6 text-sm">
+            {/* Left: Page info */}
+            <div className="text-muted-foreground">
+              Page {allocationPage} of {totalAllocationPages}
+            </div>
+
+            {/* Right: controls + result count */}
+            <div className="flex items-center gap-4">
+              <span className="text-muted-foreground">
+                {allocationTables.length} result(s) found
+              </span>
+
+              <div className="flex border rounded-md overflow-hidden">
+                <button
+                  disabled={allocationPage === 1}
+                  onClick={() => setAllocationPage(p => Math.max(1, p - 1))}
+                  className="px-3 py-1 border-r disabled:opacity-40 hover:bg-muted"
+                >
+                  ‹
+                </button>
+                <button
+                  disabled={allocationPage === totalAllocationPages}
+                  onClick={() => setAllocationPage(p => Math.min(totalAllocationPages, p + 1))}
+                  className="px-3 py-1 disabled:opacity-40 hover:bg-muted"
+                >
+                  ›
+                </button>
+              </div>
+            </div>
+          </div>
+
+
+
         </>
       )}
 
