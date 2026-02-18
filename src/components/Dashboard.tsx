@@ -15,6 +15,87 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 
 import { categories, subCategoriesMap, departments } from '@/models/data'
 
+const API_BASE_URL = "http://localhost:8000/"
+
+type ApiQuery = Record<string, string | number | boolean | null | undefined>
+
+const buildApiUrl = (path: string, query?: ApiQuery) => {
+  const url = new URL(path, API_BASE_URL)
+  if (query) {
+    Object.entries(query).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === "") return
+      url.searchParams.set(key, String(value))
+    })
+  }
+  return url.toString()
+}
+
+async function apiRequest<T>(path: string, options: RequestInit = {}, query?: ApiQuery): Promise<T> {
+  const res = await fetch(buildApiUrl(path, query), {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers ?? {}),
+    },
+  })
+
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => "")
+    throw new Error(`API ${options.method ?? "GET"} ${path} failed (${res.status}): ${errorText}`)
+  }
+
+  if (res.status === 204) return undefined as T
+
+  const contentType = res.headers.get("content-type") ?? ""
+  if (contentType.includes("application/json")) return (await res.json()) as T
+  return (await res.text()) as unknown as T
+}
+
+// Health
+export const healthCheck = () => apiRequest<unknown>("/", { method: "GET" })
+
+// Receipts
+export const listReceipts = () => apiRequest<unknown>("/receipts", { method: "GET" })
+export const getReceipt = (id: string | number) => apiRequest<unknown>(`/receipts/${id}`, { method: "GET" })
+export const addReceipt = (data: unknown) =>
+  apiRequest<unknown>("/receipts", { method: "POST", body: JSON.stringify(data) })
+export const updateReceipt = (id: string | number, data: unknown) =>
+  apiRequest<unknown>(`/receipts/${id}`, { method: "PUT", body: JSON.stringify(data) })
+export const deleteReceipt = (id: string | number) => apiRequest<unknown>(`/receipts/${id}`, { method: "DELETE" })
+
+// Allocations
+export const listAllocations = () => apiRequest<unknown>("/allocations", { method: "GET" })
+export const getAllocation = (id: string | number) => apiRequest<unknown>(`/allocations/${id}`, { method: "GET" })
+export const addAllocation = (data: unknown) =>
+  apiRequest<unknown>("/allocations", { method: "POST", body: JSON.stringify(data) })
+export const updateAllocation = (id: string | number, data: unknown) =>
+  apiRequest<unknown>(`/allocations/${id}`, { method: "PUT", body: JSON.stringify(data) })
+export const deleteAllocation = (id: string | number) =>
+  apiRequest<unknown>(`/allocations/${id}`, { method: "DELETE" })
+
+// Expenditures
+export const listExpenditures = () => apiRequest<unknown>("/expenditures", { method: "GET" })
+export const getExpenditure = (id: string | number) => apiRequest<unknown>(`/expenditures/${id}`, { method: "GET" })
+export const addExpenditure = (data: unknown) =>
+  apiRequest<unknown>("/expenditures", { method: "POST", body: JSON.stringify(data) })
+export const updateExpenditure = (id: string | number, data: unknown) =>
+  apiRequest<unknown>(`/expenditures/${id}`, { method: "PUT", body: JSON.stringify(data) })
+export const deleteExpenditure = (id: string | number) =>
+  apiRequest<unknown>(`/expenditures/${id}`, { method: "DELETE" })
+
+// Summary (Dashboard)
+export const getSummary = () => apiRequest<unknown>("/summary", { method: "GET" })
+
+// Reports
+export type ReportsQuery = {
+  dateFrom?: string
+  dateTo?: string
+  financialYear?: string
+  category?: string
+  department?: string
+}
+export const getReports = (query: ReportsQuery = {}) => apiRequest<unknown>("/reports", { method: "GET" }, query)
+
 const randomItem = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)]
 const randomDate = (year = 2024) => new Date(year, Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1)
 const randomAmount = (max: number) => parseFloat((Math.random() * max).toFixed(2))
@@ -38,6 +119,49 @@ type Allocation = {
 }
 
 type Expenditure = { date: Date; billNo: string; voucherNo: string; category: string; subCategory: string; department: string; amount: number; attachment?: string }
+
+const normalizeReceiptFromApi = (item: any): Receipt => ({
+  date: item.date ? new Date(item.date) : new Date(),
+  sanctionOrder: item.sanctionOrder != null ? String(item.sanctionOrder) : "",
+  category: item.category != null ? String(item.category) : "",
+  amount:
+    typeof item.amount === "number"
+      ? item.amount
+      : item.amount != null
+      ? Number(item.amount)
+      : 0,
+  attachment: item.attachment != null && item.attachment !== "" ? String(item.attachment) : undefined,
+})
+
+const normalizeAllocationFromApi = (item: any): Allocation => ({
+  date: item.date ? new Date(item.date) : new Date(),
+  allocationNumber: item.allocationNumber != null ? String(item.allocationNumber) : "",
+  category: item.category != null ? String(item.category) : "",
+  subCategory: item.subCategory != null ? String(item.subCategory) : "-",
+  department: item.department != null ? String(item.department) : "-",
+  allocatedAmount:
+    typeof item.allocatedAmount === "number"
+      ? item.allocatedAmount
+      : item.allocatedAmount != null
+      ? Number(item.allocatedAmount)
+      : 0,
+})
+
+const normalizeExpenditureFromApi = (item: any): Expenditure => ({
+  date: item.date ? new Date(item.date) : new Date(),
+  billNo: item.billNo != null ? String(item.billNo) : "",
+  voucherNo: item.voucherNo != null ? String(item.voucherNo) : "",
+  category: item.category != null ? String(item.category) : "",
+  subCategory: item.subCategory != null ? String(item.subCategory) : "",
+  department: item.department != null ? String(item.department) : "-",
+  amount:
+    typeof item.amount === "number"
+      ? item.amount
+      : item.amount != null
+      ? Number(item.amount)
+      : 0,
+  attachment: item.attachment != null && item.attachment !== "" ? String(item.attachment) : undefined,
+})
 
 const generateReceipts = (count: number): Receipt[] =>
   Array.from({ length: count }, () => ({
@@ -117,9 +241,9 @@ export function Dashboard() {
   const [scale, setScale] = useState<Scale>("absolute")
   const [activeTab, setActiveTab] = useState<Tab>("summary")
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
-  const [allocations, setAllocations] = useState<Allocation[]>(generateAllocations(20))
-  const [receipts, setReceipts] = useState<Receipt[]>(generateReceipts(100))
-  const [expenditures, setExpenditures] = useState<Expenditure[]>(generateExpenditures(150))
+  const [allocations, setAllocations] = useState<Allocation[]>([])
+  const [receipts, setReceipts] = useState<Receipt[]>([])
+  const [expenditures, setExpenditures] = useState<Expenditure[]>([])
   const [reportType, setReportType] = useState<"expenditure" | "receipts" | null>(null)
   const [filterType, setFilterType] = useState<"dateRange" | "financialYear" | null>(null)
   const [startDate, setStartDate] = useState<string>("")
@@ -127,6 +251,36 @@ export function Dashboard() {
   const [selectedFinancialYear, setSelectedFinancialYear] = useState<string>("")
   const [selectedCategory, setSelectedCategory] = useState<string>("")
   const [selectedDepartment, setSelectedDepartment] = useState<string>("")
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [receiptsRes, allocationsRes, expendituresRes] = await Promise.all([
+          listReceipts() as Promise<any>,
+          listAllocations() as Promise<any>,
+          listExpenditures() as Promise<any>,
+        ])
+
+        if (Array.isArray(receiptsRes)) {
+          setReceipts(receiptsRes.map(normalizeReceiptFromApi))
+        }
+        if (Array.isArray(allocationsRes)) {
+          setAllocations(allocationsRes.map(normalizeAllocationFromApi))
+        }
+        if (Array.isArray(expendituresRes)) {
+          setExpenditures(expendituresRes.map(normalizeExpenditureFromApi))
+        }
+      } catch (error) {
+        console.error("Failed to load dashboard data from API", error)
+        setReceipts(generateReceipts(100))
+        setAllocations(generateAllocations(20))
+        setExpenditures(generateExpenditures(150))
+      }
+    }
+
+    loadData()
+  }, [])
+
     const formatDateForExport = (date: Date) =>
     date.toLocaleDateString("en-IN")
 
